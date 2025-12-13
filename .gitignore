@@ -8,3 +8,8 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Datasets
+src/hidden/*.csv
+src/shown/*.csv
+src/tests/*.csv
