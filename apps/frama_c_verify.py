@@ -222,29 +222,11 @@ def verify_annotated_c(annotated_code: str) -> bool:
             proved = int(match.group(1))
             total = int(match.group(2))
             print(f"Proved: {proved}/{total}")
-            return {
-                "success": proved == total and proved > 0,
-                "proved": proved,
-                "total": total,
-                "output": output,
-                "error": None
-            }
+            return proved == total and proved > 0
 
-        return {
-            "success": False,
-            "proved": 0,
-            "total": 0,
-            "output": output,
-            "error": "Could not parse Frama-C output"
-        }
+        return False
 
     except Exception as e:
         print(f"Verification error: {e}")
-        return {
-            "success": False,
-            "proved": 0,
-            "total": 0,
-            "output": "",
-            "error": str(e)
-        }
+        return False
 
