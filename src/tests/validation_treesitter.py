@@ -358,15 +358,41 @@ def inject_acsl_specs_treesitter(spec: List, c_code: str) -> str:
 
     This is more reliable than regex-based injection.
     """
+    import re
 
     if not spec or len(spec) <= 1:
         return c_code
 
-    # Find injection points using tree-sitter
-    injection_points = find_injection_points(c_code, spec)
+    # Step 1: Find where #include statements end (if any)
+    include_pattern = r'^\s*#\s*include\s+[<"][^>"]+[>"]'
+    lines = c_code.split('\n')
+    last_include_line = -1
 
-    # Inject specs in reverse order (from end to start to preserve positions)
-    result = c_code
+    for i, line in enumerate(lines):
+        if re.match(include_pattern, line):
+            last_include_line = i
+
+    # Step 2: Split the code into header (includes) and body (everything else)
+    if last_include_line >= 0:
+        header_lines = lines[:last_include_line + 1]
+        body_lines = lines[last_include_line + 1:]
+        header = '\n'.join(header_lines)
+        body = '\n'.join(body_lines)
+    else:
+        header = ""
+        body = c_code
+
+    # Step 3: Add predicates after header
+    predicates = spec[0] if spec[0] else []
+    predicates_text = ""
+    if predicates:
+        predicates_text = "\n\n".join(pred.strip() for pred in predicates if pred and pred.strip())
+
+    # Step 4: Find injection points in the body (not the full code)
+    injection_points = find_injection_points(body, spec)
+
+    # Step 5: Inject function/loop specs in reverse order
+    result = body
     for point in injection_points:
         spec_text = spec[point.spec_index]
 
@@ -378,17 +404,20 @@ def inject_acsl_specs_treesitter(spec: List, c_code: str) -> str:
                 result[point.byte_position:]
             )
 
-    # Add predicates at the beginning
-    predicates = spec[0] if spec[0] else []
-    if predicates:
-        predicates_text = "\n\n".join(pred.strip() for pred in predicates if pred and pred.strip())
-        result = predicates_text + "\n\n" + result
+    # Step 6: Reassemble: header + predicates + body with specs
+    final_parts = []
+    if header:
+        final_parts.append(header)
+    if predicates_text:
+        final_parts.append(predicates_text)
+    final_parts.append(result)
+
+    final = '\n\n'.join(final_parts)
 
     # Clean up excessive newlines
-    import re
-    result = re.sub(r'\n\s*\n\s*\n+', '\n\n', result)
+    final = re.sub(r'\n\s*\n\s*\n+', '\n\n', final)
 
-    return result.strip()
+    return final.strip()
 
 
 # ============================================================================

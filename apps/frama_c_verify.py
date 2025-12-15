@@ -40,7 +40,7 @@ app = modal.App("frama_check", image=image)
 
 @app.function(
     max_containers=50,
-    timeout=120,
+    timeout=30,
 )
 def check_frama_c_verification(acsl_spec: str, c_code: str) -> bool:
     try:
@@ -195,8 +195,17 @@ def reinject_and_verify(spec: list, c_code: str) -> float:
         return 0.0
 
 @app.function(max_containers=50, timeout=120)
-def verify_annotated_c(annotated_code: str) -> bool:
+def verify_annotated_c(annotated_code: str, verbose: bool = True) -> bool:
     try:
+        # Print input code with line numbers
+        if verbose:
+            print("=" * 80)
+            print("INPUT CODE:")
+            print("=" * 80)
+            for i, line in enumerate(annotated_code.split('\n'), 1):
+                print(f"{i:4d} | {line}")
+            print("=" * 80)
+
         with tempfile.NamedTemporaryFile(mode="w", suffix=".c", delete=False) as f:
             f.write(annotated_code)
             temp_filename = f.name
@@ -210,23 +219,48 @@ def verify_annotated_c(annotated_code: str) -> bool:
 
         output = result.stdout + result.stderr
 
-        print("=" * 80)
-        print("FRAMA-C OUTPUT:")
-        print(output)
-        print("=" * 80)
+        if verbose:
+            print("\nFRAMA-C FULL OUTPUT:")
+            print("=" * 80)
+            print(output)
+            print("=" * 80)
+
+        # Extract and print errors/warnings
+        errors = re.findall(r'^\[.*?\] .*(?:error|warning|Error|Warning).*$', output, re.MULTILINE)
+        failed_goals = re.findall(r'^\[wp\].*Goal.*not proved.*$', output, re.MULTILINE)
+        
+        if errors:
+            print("\n⚠️  ERRORS/WARNINGS:")
+            print("-" * 40)
+            for err in errors:
+                print(f"  {err}")
+        
+        if failed_goals:
+            print("\n❌ FAILED GOALS:")
+            print("-" * 40)
+            for goal in failed_goals:
+                print(f"  {goal}")
 
         os.unlink(temp_filename)
 
+        # Parse proved goals
         match = re.search(r'Proved goals:\s+(\d+)\s*/\s*(\d+)', output)
         if match:
             proved = int(match.group(1))
             total = int(match.group(2))
-            print(f"Proved: {proved}/{total}")
+            status = "✅ PASSED" if (proved == total and proved > 0) else "❌ FAILED"
+            print(f"\n{status}: Proved {proved}/{total} goals")
             return proved == total and proved > 0
 
+        print("\n❌ FAILED: Could not parse Frama-C output (no goals found)")
         return False
 
+    except subprocess.TimeoutExpired:
+        print("\n❌ FAILED: Frama-C timed out after 60 seconds")
+        return False
     except Exception as e:
-        print(f"Verification error: {e}")
+        print(f"\n❌ FAILED: Verification error: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
